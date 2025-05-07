@@ -1,1 +1,1 @@
-# Variational AutoEncoder to generate images of cats and dogs
+# Variational AutoEncoder trained on MNIST dataset
