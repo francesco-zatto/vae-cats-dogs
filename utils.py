@@ -18,10 +18,13 @@ def build_encoder(img_shape, conditional=False, num_classes=10):
     if conditional:
         labels = Input(shape=(num_classes,))
         x = layers.Concatenate()([x, labels])
+        model_inputs = [inputs, labels]
+    else:
+        model_inputs = inputs
 
     z_mean = layers.Dense(LATENT_DIM)(x)
     z_log_var = layers.Dense(LATENT_DIM)(x)
-    return Model([inputs, labels], [z_mean, z_log_var], name='encoder')
+    return Model(model_inputs, [z_mean, z_log_var], name='encoder')
 
 # Sample from latent space the vector z = mean + sqrt(exp(log_var)) * epsilon
 MAX_LOG_VAR = 10.0
