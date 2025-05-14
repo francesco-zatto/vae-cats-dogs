@@ -109,7 +109,7 @@ class VAE(Model):
         return recon_loss + gamma * kl_loss
 
 # Show real images reconstruction
-def show_images_reconstruction(vae_model: utils.VAE, x_test, label=None, n=16, plot=True):
+def show_images_reconstruction(vae_model: VAE, x_test, label=None, n=16, plot=True):
     real_images = x_test[:n]
     if label is not None:
         # Conditional VAE
@@ -119,20 +119,20 @@ def show_images_reconstruction(vae_model: utils.VAE, x_test, label=None, n=16, p
         # VAE
         recon_images = vae_model.reconstruct_images(real_images)
 
-  if plot:
-    plt.figure(figsize=(20, 4))
-    for i in range(n):
-        # Original
-        ax = plt.subplot(2, n, i + 1)
-        plt.imshow(real_images[i])
-        plt.axis("off")
+    if plot:
+        plt.figure(figsize=(20, 4))
+        for i in range(n):
+            # Original
+            ax = plt.subplot(2, n, i + 1)
+            plt.imshow(real_images[i])
+            plt.axis("off")
 
-        # Reconstructed
-        ax = plt.subplot(2, n, i + 1 + n)
-        plt.imshow(recon_images[i])
-        plt.axis("off")
+            # Reconstructed
+            ax = plt.subplot(2, n, i + 1 + n)
+            plt.imshow(recon_images[i])
+            plt.axis("off")
 
     plt.suptitle("Top: Original | Bottom: Reconstruction")
     plt.show()
 
-  return recon_images
+    return recon_images
