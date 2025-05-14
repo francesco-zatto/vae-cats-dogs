@@ -1,3 +1,8 @@
+import tensorflow as tf
+from tensorflow.keras import layers, Model, Input
+import numpy as np
+import matplotlib.pyplot as plt
+
 MNIST_IMG_SHAPE = (28, 28, 1)
 LATENT_DIM = 128
 KERNEL_SIZE = 4
