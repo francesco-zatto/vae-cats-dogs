@@ -67,7 +67,20 @@ class VAE(Model):
         super().compile()
         self.optimizer = optimizer
         self.recon_loss_fn = tf.keras.losses.MeanSquaredError()
-
+        
+    def reconstruct_images(self, inputs, batch_size=None):
+        if self.conditional:
+            images, labels = inputs
+            z_mean, z_log_var = self.encoder.predict([images, labels], batch_size=batch_size)
+            z = self.sampler([z_mean, z_log_var])
+            recon_images = self.decoder.predict([z, labels], batch_size=batch_size)
+        else:
+            images = inputs
+            z_mean, z_log_var = self.encoder.predict(images, batch_size=batch_size)
+            z = self.sampler([z_mean, z_log_var])
+            recon_images = self.decoder.predict(z, batch_size=batch_size)
+        return recon_images
+        
     def train_step(self, data):
         if self.conditional:
             data, label = data
@@ -94,3 +107,32 @@ class VAE(Model):
         kl_loss = -0.5 * tf.keras.backend.sum(1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var), axis=-1)
         kl_loss = tf.reduce_mean(kl_loss)
         return recon_loss + gamma * kl_loss
+
+# Show real images reconstruction
+def show_images_reconstruction(vae_model: utils.VAE, x_test, label=None, n=16, plot=True):
+    real_images = x_test[:n]
+    if label is not None:
+        # Conditional VAE
+        real_labels = label[:n]
+        recon_images = vae_model.reconstruct_images((real_images, real_labels)
+    else:
+        # VAE
+        recon_images = vae_model.reconstruct_images(real_images)
+
+  if plot:
+    plt.figure(figsize=(20, 4))
+    for i in range(n):
+        # Original
+        ax = plt.subplot(2, n, i + 1)
+        plt.imshow(real_images[i])
+        plt.axis("off")
+
+        # Reconstructed
+        ax = plt.subplot(2, n, i + 1 + n)
+        plt.imshow(recon_images[i])
+        plt.axis("off")
+
+    plt.suptitle("Top: Original | Bottom: Reconstruction")
+    plt.show()
+
+  return recon_images
