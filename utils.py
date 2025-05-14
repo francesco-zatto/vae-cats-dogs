@@ -10,17 +10,17 @@ KERNEL_SIZE = 4
 # Encode the image into the latent space of dimension LATENT_DIM
 def build_encoder(img_shape, conditional=False, num_classes=10):
     inputs = Input(shape=img_shape)
-    x = layers.Conv2D(32, KERNEL_SIZE, strides=2, padding='same', activation='relu')(inputs)
-    x = layers.Conv2D(64, KERNEL_SIZE, strides=2, padding='same', activation='relu')(x)
-    x = layers.Conv2D(128, KERNEL_SIZE, strides=2, padding='same', activation='relu')(x)
-    x = layers.Flatten()(x)
-
     if conditional:
         labels = Input(shape=(num_classes,))
         x = layers.Concatenate()([x, labels])
         model_inputs = [inputs, labels]
     else:
         model_inputs = inputs
+
+    x = layers.Conv2D(32, KERNEL_SIZE, strides=2, padding='same', activation='relu')(model_inputs)
+    x = layers.Conv2D(64, KERNEL_SIZE, strides=2, padding='same', activation='relu')(x)
+    x = layers.Conv2D(128, KERNEL_SIZE, strides=2, padding='same', activation='relu')(x)
+    x = layers.Flatten()(x)
 
     z_mean = layers.Dense(LATENT_DIM)(x)
     z_log_var = layers.Dense(LATENT_DIM)(x)
@@ -55,12 +55,13 @@ def build_decoder(conditional=False, num_classes=10):
 # VAE class that has an encoder, a sampler, a decoder and the VAE loss
 class VAE(Model):
 
-    def __init__(self, encoder, decoder, **kwargs):
+    def __init__(self, encoder, decoder, conditional=False, **kwargs):
         super(VAE, self).__init__(**kwargs)
         self.encoder = encoder
         self.decoder = decoder
         self.sampler = Sampling()
         self.total_loss_tracker = tf.keras.metrics.Mean(name="total_loss")
+        self.conditional = conditional
 
     def compile(self, optimizer):
         super().compile()
@@ -68,21 +69,22 @@ class VAE(Model):
         self.recon_loss_fn = tf.keras.losses.MeanSquaredError()
 
     def train_step(self, data):
-        data, label = data[0]
+        if self.conditional:
+            data, label = data
     
         with tf.GradientTape() as tape:
-          z_mean, z_log_var = self.encoder([data, label])
-          z = self.sampler([z_mean, z_log_var])
-          decoded_image = self.decoder([z, label])
-          loss = self.vae_loss(data, decoded_image, (z_mean, z_log_var))
+            z_mean, z_log_var = self.encoder([data, label] if self.conditional else data)
+            z = self.sampler([z_mean, z_log_var])
+            decoded_image = self.decoder([z, label] if self.conditional else z)
+            loss = self.vae_loss(data, decoded_image, (z_mean, z_log_var))
     
         grads = tape.gradient(loss, self.trainable_weights)
         for g in grads:
-          tf.debugging.check_numerics(g, message="Gradient NaN detected")
+            tf.debugging.check_numerics(g, message="Gradient NaN detected")
         self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
         self.total_loss_tracker.update_state(loss)
         return {
-          "loss": self.total_loss_tracker.result()
+            "loss": self.total_loss_tracker.result()
         }
 
     def vae_loss(self, data, decoded_image, encoder_output):
