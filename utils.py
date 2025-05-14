@@ -2,25 +2,26 @@ import tensorflow as tf
 from tensorflow.keras import layers, Model, Input
 import numpy as np
 import matplotlib.pyplot as plt
+import math
 
 MNIST_IMG_SHAPE = (28, 28, 1)
-LATENT_DIM = 128
+LATENT_DIM = 16
 KERNEL_SIZE = 4
 
 # Encode the image into the latent space of dimension LATENT_DIM
 def build_encoder(img_shape, conditional=False, num_classes=10):
     inputs = Input(shape=img_shape)
+    x = layers.Conv2D(32, KERNEL_SIZE, strides=2, padding='same', activation='relu')(inputs)
+    x = layers.Conv2D(64, KERNEL_SIZE, strides=2, padding='same', activation='relu')(x)
+    x = layers.Conv2D(128, KERNEL_SIZE, strides=2, padding='same', activation='relu')(x)
+    x = layers.Flatten()(x)
+
     if conditional:
         labels = Input(shape=(num_classes,))
         x = layers.Concatenate()([x, labels])
         model_inputs = [inputs, labels]
     else:
         model_inputs = inputs
-
-    x = layers.Conv2D(32, KERNEL_SIZE, strides=2, padding='same', activation='relu')(model_inputs)
-    x = layers.Conv2D(64, KERNEL_SIZE, strides=2, padding='same', activation='relu')(x)
-    x = layers.Conv2D(128, KERNEL_SIZE, strides=2, padding='same', activation='relu')(x)
-    x = layers.Flatten()(x)
 
     z_mean = layers.Dense(LATENT_DIM)(x)
     z_log_var = layers.Dense(LATENT_DIM)(x)
@@ -80,10 +81,20 @@ class VAE(Model):
             z = self.sampler([z_mean, z_log_var])
             recon_images = self.decoder.predict(z, batch_size=batch_size)
         return recon_images
+
+    def generate(self, n, labels=None):
+        z_random = tf.random.normal(shape=(n, LATENT_DIM))
+        if self.conditional:
+            labels = labels[:n]
+            generated = self.decoder.predict([z_random, labels])
+        else:
+            generated = self.decoder.predict(z_random)
+
+        return generated
         
     def train_step(self, data):
         if self.conditional:
-            data, label = data
+            data, label = data[0]
     
         with tf.GradientTape() as tape:
             z_mean, z_log_var = self.encoder([data, label] if self.conditional else data)
@@ -101,7 +112,7 @@ class VAE(Model):
         }
 
     def vae_loss(self, data, decoded_image, encoder_output):
-        gamma = 0.0001
+        gamma = 1
         z_mean, z_log_var = encoder_output
         recon_loss = (self.recon_loss_fn(data, decoded_image))
         kl_loss = -0.5 * tf.keras.backend.sum(1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var), axis=-1)
@@ -124,15 +135,39 @@ def show_images_reconstruction(vae_model: VAE, x_test, label=None, n=16, plot=Tr
         for i in range(n):
             # Original
             ax = plt.subplot(2, n, i + 1)
-            plt.imshow(real_images[i])
+            plt.imshow(real_images[i], cmap="gray")
             plt.axis("off")
 
             # Reconstructed
             ax = plt.subplot(2, n, i + 1 + n)
-            plt.imshow(recon_images[i])
+            plt.imshow(recon_images[i], cmap="gray")
             plt.axis("off")
 
     plt.suptitle("Top: Original | Bottom: Reconstruction")
     plt.show()
 
-    return recon_images
+def get_labels_from_one_hots(one_hots):
+    return tf.argmax(one_hots, axis=1).numpy()
+
+def sample_and_plot(vae, n=16, labels=None, figsize=(6, 6), title='Generated Images'):
+    images = vae.generate(n=n, labels=labels[:n])
+    images = np.array(images)
+
+    cols = rows = int(math.ceil(math.sqrt(n)))
+    fig, axs = plt.subplots(rows, cols, figsize=figsize)
+    axs = axs.flatten()
+
+    if vae.conditional and labels is not None:
+        label_indices = get_labels_from_one_hots(labels[:n])
+    else:
+        label_indices = [None] * n
+
+    for i in range(n):
+        axs[i].imshow(images[i], cmap='gray')
+        axs[i].axis('off')
+        if label_indices[i] is not None:
+            axs[i].set_title(str(label_indices[i]), fontsize=8)
+
+    plt.suptitle(title, fontsize=14)
+    plt.tight_layout()
+    plt.show()
