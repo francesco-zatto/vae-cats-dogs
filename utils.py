@@ -114,7 +114,7 @@ def show_images_reconstruction(vae_model: utils.VAE, x_test, label=None, n=16, p
     if label is not None:
         # Conditional VAE
         real_labels = label[:n]
-        recon_images = vae_model.reconstruct_images((real_images, real_labels)
+        recon_images = vae_model.reconstruct_images((real_images, real_labels))
     else:
         # VAE
         recon_images = vae_model.reconstruct_images(real_images)
