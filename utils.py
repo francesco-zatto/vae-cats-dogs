@@ -37,55 +37,58 @@ class Sampling(layers.Layer):
 
 # Decode from the latent space the original image
 def build_decoder(conditional=False, num_classes=10):
-  latent_inputs = Input(shape=(LATENT_DIM,))
-  if conditional:
-    labels = Input(shape=(num_classes,))
-    concat_inputs = layers.Concatenate()([latent_inputs, labels])
-
-  x = layers.Dense(7 * 7 * LATENT_DIM, activation='relu')(concat_inputs if conditional else latent_inputs)
-  x = layers.Reshape((7, 7, LATENT_DIM))(x)
-  x = layers.Conv2DTranspose(64, KERNEL_SIZE, strides=2, padding='same', activation='relu')(x)
-  x = layers.Conv2DTranspose(32, KERNEL_SIZE, strides=2, padding='same', activation='relu')(x)
-  outputs = layers.Conv2D(1, KERNEL_SIZE-1, padding='same', activation='sigmoid')(x)
-  return Model([latent_inputs, labels], outputs, name='decoder')
+    latent_inputs = Input(shape=(LATENT_DIM,))
+    if conditional:
+        labels = Input(shape=(num_classes,))
+        model_inputs = [latent_inputs, labels]
+        concat_inputs = layers.Concatenate()(model_inputs)
+    else:
+        model_inputs = latent_inputs
+    
+    x = layers.Dense(7 * 7 * LATENT_DIM, activation='relu')(concat_inputs if conditional else latent_inputs)
+    x = layers.Reshape((7, 7, LATENT_DIM))(x)
+    x = layers.Conv2DTranspose(64, KERNEL_SIZE, strides=2, padding='same', activation='relu')(x)
+    x = layers.Conv2DTranspose(32, KERNEL_SIZE, strides=2, padding='same', activation='relu')(x)
+    outputs = layers.Conv2D(1, KERNEL_SIZE-1, padding='same', activation='sigmoid')(x)
+    return Model(model_inputs, outputs, name='decoder')
 
 # VAE class that has an encoder, a sampler, a decoder and the VAE loss
 class VAE(Model):
 
-  def __init__(self, encoder, decoder, **kwargs):
-    super(VAE, self).__init__(**kwargs)
-    self.encoder = encoder
-    self.decoder = decoder
-    self.sampler = Sampling()
-    self.total_loss_tracker = tf.keras.metrics.Mean(name="total_loss")
+    def __init__(self, encoder, decoder, **kwargs):
+        super(VAE, self).__init__(**kwargs)
+        self.encoder = encoder
+        self.decoder = decoder
+        self.sampler = Sampling()
+        self.total_loss_tracker = tf.keras.metrics.Mean(name="total_loss")
 
-  def compile(self, optimizer):
-    super().compile()
-    self.optimizer = optimizer
-    self.recon_loss_fn = tf.keras.losses.MeanSquaredError()
+    def compile(self, optimizer):
+        super().compile()
+        self.optimizer = optimizer
+        self.recon_loss_fn = tf.keras.losses.MeanSquaredError()
 
-  def train_step(self, data):
-    data, label = data[0]
+    def train_step(self, data):
+        data, label = data[0]
+    
+        with tf.GradientTape() as tape:
+          z_mean, z_log_var = self.encoder([data, label])
+          z = self.sampler([z_mean, z_log_var])
+          decoded_image = self.decoder([z, label])
+          loss = self.vae_loss(data, decoded_image, (z_mean, z_log_var))
+    
+        grads = tape.gradient(loss, self.trainable_weights)
+        for g in grads:
+          tf.debugging.check_numerics(g, message="Gradient NaN detected")
+        self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
+        self.total_loss_tracker.update_state(loss)
+        return {
+          "loss": self.total_loss_tracker.result()
+        }
 
-    with tf.GradientTape() as tape:
-      z_mean, z_log_var = self.encoder([data, label])
-      z = self.sampler([z_mean, z_log_var])
-      decoded_image = self.decoder([z, label])
-      loss = self.vae_loss(data, decoded_image, (z_mean, z_log_var))
-
-    grads = tape.gradient(loss, self.trainable_weights)
-    for g in grads:
-      tf.debugging.check_numerics(g, message="Gradient NaN detected")
-    self.optimizer.apply_gradients(zip(grads, self.trainable_weights))
-    self.total_loss_tracker.update_state(loss)
-    return {
-      "loss": self.total_loss_tracker.result()
-    }
-
-  def vae_loss(self, data, decoded_image, encoder_output):
-    gamma = 0.0001
-    z_mean, z_log_var = encoder_output
-    recon_loss = (self.recon_loss_fn(data, decoded_image))
-    kl_loss = -0.5 * tf.keras.backend.sum(1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var), axis=-1)
-    kl_loss = tf.reduce_mean(kl_loss)
-    return recon_loss + gamma * kl_loss
+    def vae_loss(self, data, decoded_image, encoder_output):
+        gamma = 0.0001
+        z_mean, z_log_var = encoder_output
+        recon_loss = (self.recon_loss_fn(data, decoded_image))
+        kl_loss = -0.5 * tf.keras.backend.sum(1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var), axis=-1)
+        kl_loss = tf.reduce_mean(kl_loss)
+        return recon_loss + gamma * kl_loss
